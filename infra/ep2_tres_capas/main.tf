@@ -1,3 +1,4 @@
+# ============================================================
 # Innovatech Chile - EP2 DevOps
 # Arquitectura de 3 capas basada en la entrega EP1:
 # Frontend publico | Backend privado | Data privada
@@ -417,6 +418,7 @@ resource "aws_instance" "frontend" {
     Environment = "deploy"
     role        = "frontend"
     component   = "frontend"
+    service     = "frontend"
   }
 }
 
@@ -442,6 +444,7 @@ resource "aws_instance" "backend" {
     Environment = "deploy"
     role        = "backend"
     component   = "backend"
+    service     = "backend"
   }
 }
 
@@ -467,5 +470,7 @@ resource "aws_instance" "data" {
     Environment = "deploy"
     role        = "data"
     component   = "data"
+    service     = "data"
+    Service     = "database"
   }
 }
