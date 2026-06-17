@@ -1,4 +1,3 @@
-# ============================================================
 # Innovatech Chile - EP2 DevOps
 # Arquitectura de 3 capas basada en la entrega EP1:
 # Frontend publico | Backend privado | Data privada
@@ -398,76 +397,75 @@ locals {
 resource "aws_instance" "frontend" {
   ami                         = data.aws_ami.amazon_linux.id
   instance_type               = var.instance_type
-  key_name                    = var.key_pair_name
+  key_name                    = "ep2-devops-key"
   subnet_id                   = aws_subnet.public_frontend.id
   vpc_security_group_ids      = [aws_security_group.frontend.id]
   iam_instance_profile        = data.aws_iam_instance_profile.lab_profile.name
   associate_public_ip_address = true
   user_data                   = local.common_user_data
 
-  # Se asigna espacio suficiente para Docker, Nginx y la imagen del Frontend.
-  # Mantiene un tamaño moderado para cuidar el presupuesto AWS Academy.
   root_block_device {
     volume_size = 12
     volume_type = "gp3"
   }
 
   tags = {
-    Name    = "${var.project_name}-frontend"
-    Tier    = "Frontend"
-    Project = var.project_name
-    Stage   = "EP2"
+    Name        = "${var.project_name}-frontend"
+    Tier        = "Frontend"
+    Project     = var.project_name
+    Stage       = "EP2"
+    Environment = "deploy"
+    role        = "frontend"
+    component   = "frontend"
   }
 }
 
 resource "aws_instance" "backend" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
-  key_name               = var.key_pair_name
+  key_name               = "ep2-devops-key"
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.backend.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
   user_data              = local.common_user_data
 
-  # Se asigna espacio suficiente para descargar y ejecutar
-  # dos imagenes Java: proyectos-backend y avances-backend.
-  # Mantiene un tamaño moderado para cuidar el presupuesto AWS Academy.
   root_block_device {
     volume_size = 12
     volume_type = "gp3"
   }
 
   tags = {
-    Name    = "${var.project_name}-backend"
-    Tier    = "Backend"
-    Project = var.project_name
-    Stage   = "EP2"
+    Name        = "${var.project_name}-backend"
+    Tier        = "Backend"
+    Project     = var.project_name
+    Stage       = "EP2"
+    Environment = "deploy"
+    role        = "backend"
+    component   = "backend"
   }
 }
 
 resource "aws_instance" "data" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
-  key_name               = var.key_pair_name
+  key_name               = "ep2-devops-key"
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.data.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
   user_data              = local.common_user_data
 
-  # Se asigna espacio suficiente para MySQL, volumenes Docker
-  # y extraccion de la imagen mysql:8.0.
-  # Mantiene un tamaño moderado para cuidar el presupuesto AWS Academy.
   root_block_device {
     volume_size = 12
     volume_type = "gp3"
   }
 
   tags = {
-    Name    = "${var.project_name}-data"
-    Tier    = "Data"
-    Project = var.project_name
-    Stage   = "EP2"
+    Name        = "${var.project_name}-data"
+    Tier        = "Data"
+    Project     = var.project_name
+    Stage       = "EP2"
+    Environment = "deploy"
+    role        = "data"
+    component   = "data"
   }
 }
-
-## loco
