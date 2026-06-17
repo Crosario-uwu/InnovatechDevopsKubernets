@@ -63,9 +63,23 @@ jobs:
           push: true
           tags: ${{ env.FRONTEND_IMAGE }}
 
-      - name: Esperar SSM disponible
+      - name: Esperar activacion real de AWS SSM
+        env:
+          DATA_ID: ${{ secrets.DATA_INSTANCE_ID }}
         run: |
-          aws ssm describe-instance-information --output table || true
+          DATA_ID=$(printf '%s' "$DATA_ID" | tr -d ' \t\n\r')
+          echo "Verificando enlace con la instancia: $DATA_ID"
+          for i in {1..15}; do
+            STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$DATA_ID" --query "InstanceInformationList[0].PingStatus" --output text)
+            if [ "$STATUS" = "Online" ]; then
+              echo "¡Agente SSM conectado exitosamente y Online!"
+              exit 0
+            fi
+            echo "Esperando que el agente SSM responda... (Intento $i/15)"
+            sleep 15
+          done
+          echo "Error: El agente SSM no logro activarse a tiempo en la instancia pública."
+          exit 1
 
       - name: Deploy Data privado con Docker volume
         env:
@@ -73,11 +87,10 @@ jobs:
           MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
           DATA_INSTANCE_ID_CLEAN: ${{ secrets.DATA_INSTANCE_ID }}
         run: |
-          # Sanear posibles espacios/saltos de linea ocultos en los secrets
           MYSQL_ROOT_PASSWORD_CLEAN=$(printf '%s' "$MYSQL_ROOT_PASSWORD_CLEAN" | tr -d ' \t\n\r')
           MYSQL_DATABASE_CLEAN=$(printf '%s' "$MYSQL_DATABASE_CLEAN" | tr -d ' \t\n\r')
           DATA_INSTANCE_ID_CLEAN=$(printf '%s' "$DATA_INSTANCE_ID_CLEAN" | tr -d ' \t\n\r')
-          cat > /tmp/deploy-data.sh <<'SCRIPT'
+          cat > /tmp/deploy-data.sh <<SCRIPT
           #!/bin/bash
           set -eux
           mkdir -p /opt/innovatech-data
@@ -132,10 +145,11 @@ jobs:
           MYSQL_DATABASE_CLEAN=$(printf '%s' "$MYSQL_DATABASE_CLEAN" | tr -d ' \t\n\r')
           MYSQL_ROOT_PASSWORD_CLEAN=$(printf '%s' "$MYSQL_ROOT_PASSWORD_CLEAN" | tr -d ' \t\n\r')
           BACKEND_INSTANCE_ID_CLEAN=$(printf '%s' "$BACKEND_INSTANCE_ID_CLEAN" | tr -d ' \t\n\r')
-          cat > /tmp/deploy-backends.sh <<'SCRIPT'
+          ECR_REGISTRY=$(printf '%s' "${{ env.PROYECTOS_BACKEND_IMAGE }}" | cut -d/ -f1)
+          cat > /tmp/deploy-backends.sh <<SCRIPT
           #!/bin/bash
           set -eux
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
           mkdir -p /opt/innovatech-backend
           cd /opt/innovatech-backend
           cat > docker-compose.yml <<'COMPOSE'
