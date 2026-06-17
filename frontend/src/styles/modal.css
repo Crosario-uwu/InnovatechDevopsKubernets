@@ -1,0 +1,45 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal {
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 18px;
+  width: min(680px, 100%);
+  padding: 24px;
+}
+
+.modal-subtitle {
+  color: #cbd5e1;
+}
+
+.avance-form {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.avance-form input {
+  flex: 1;
+}
+
+.lista {
+  list-style: none;
+  padding: 0;
+}
+
+.lista li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #334155;
+}
