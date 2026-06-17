@@ -1,0 +1,6 @@
+aws_region = "us-east-1"
+project_name = "innovatech-ep2"
+key_pair_name = "ep2-devops-key"
+iam_instance_profile_name = "LabInstanceProfile"
+instance_type = "t2.micro"
+admin_cidr = "0.0.0.0/0"

@@ -1,0 +1,80 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: innovatech-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - innovatech-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  proyectos-backend:
+    build:
+      context: ./backend-proyectos
+    image: innovatech-proyectos-backend:local
+    container_name: innovatech-proyectos-backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8080"
+    networks:
+      - innovatech-net
+
+  avances-backend:
+    build:
+      context: ./backend-avances
+    image: innovatech-avances-backend:local
+    container_name: innovatech-avances-backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8081"
+    networks:
+      - innovatech-net
+
+  frontend:
+    build:
+      context: ./frontend
+    image: innovatech-frontend:local
+    container_name: innovatech-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_PROYECTOS_URL: ${BACKEND_PROYECTOS_URL:-http://proyectos-backend:8080}
+      BACKEND_AVANCES_URL: ${BACKEND_AVANCES_URL:-http://avances-backend:8081}
+    ports:
+      - "3000:8080"
+    depends_on:
+      - proyectos-backend
+      - avances-backend
+    networks:
+      - innovatech-net
+
+volumes:
+  mysql_data:
+    name: innovatech_mysql_data
+
+networks:
+  innovatech-net:
+    name: innovatech-net
+    driver: bridge

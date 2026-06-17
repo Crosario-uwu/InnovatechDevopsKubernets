@@ -1,0 +1,22 @@
+services:
+  proyectos-backend:
+    image: ${PROYECTOS_BACKEND_IMAGE}
+    container_name: innovatech-proyectos-backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://${DATA_PRIVATE_IP}:3306/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "8080:8080"
+
+  avances-backend:
+    image: ${AVANCES_BACKEND_IMAGE}
+    container_name: innovatech-avances-backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://${DATA_PRIVATE_IP}:3306/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "8081:8081"
