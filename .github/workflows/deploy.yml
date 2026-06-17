@@ -68,7 +68,15 @@ jobs:
           aws ssm describe-instance-information --output table || true
 
       - name: Deploy Data privado con Docker volume
+        env:
+          MYSQL_ROOT_PASSWORD_CLEAN: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
+          DATA_INSTANCE_ID_CLEAN: ${{ secrets.DATA_INSTANCE_ID }}
         run: |
+          # Sanear posibles espacios/saltos de linea ocultos en los secrets
+          MYSQL_ROOT_PASSWORD_CLEAN=$(printf '%s' "$MYSQL_ROOT_PASSWORD_CLEAN" | tr -d ' \t\n\r')
+          MYSQL_DATABASE_CLEAN=$(printf '%s' "$MYSQL_DATABASE_CLEAN" | tr -d ' \t\n\r')
+          DATA_INSTANCE_ID_CLEAN=$(printf '%s' "$DATA_INSTANCE_ID_CLEAN" | tr -d ' \t\n\r')
           cat > /tmp/deploy-data.sh <<'SCRIPT'
           #!/bin/bash
           set -eux
@@ -97,24 +105,33 @@ jobs:
             innovatech_mysql_data:
               name: innovatech_mysql_data
           COMPOSE
-          sed -i 's#__MYSQL_ROOT_PASSWORD__#${{ secrets.MYSQL_ROOT_PASSWORD }}#g' docker-compose.yml
-          sed -i 's#__MYSQL_DATABASE__#${{ secrets.MYSQL_DATABASE }}#g' docker-compose.yml
+          sed -i "s#__MYSQL_ROOT_PASSWORD__#${MYSQL_ROOT_PASSWORD_CLEAN}#g" docker-compose.yml
+          sed -i "s#__MYSQL_DATABASE__#${MYSQL_DATABASE_CLEAN}#g" docker-compose.yml
           docker compose up -d
           docker ps
           docker volume ls
           SCRIPT
           COMMANDS=$(jq -Rs 'split("\n") | map(select(length > 0))' /tmp/deploy-data.sh)
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.DATA_INSTANCE_ID }}" \
+            --instance-ids "${DATA_INSTANCE_ID_CLEAN}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy MySQL Data EP2" \
             --parameters commands="$COMMANDS" \
             --query "Command.CommandId" --output text)
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.DATA_INSTANCE_ID }}"
-          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${{ secrets.DATA_INSTANCE_ID }}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${DATA_INSTANCE_ID_CLEAN}"
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${DATA_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
 
       - name: Deploy Backends privados
+        env:
+          DATA_PRIVATE_IP_CLEAN: ${{ secrets.DATA_PRIVATE_IP }}
+          MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
+          MYSQL_ROOT_PASSWORD_CLEAN: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          BACKEND_INSTANCE_ID_CLEAN: ${{ secrets.BACKEND_INSTANCE_ID }}
         run: |
+          DATA_PRIVATE_IP_CLEAN=$(printf '%s' "$DATA_PRIVATE_IP_CLEAN" | tr -d ' \t\n\r')
+          MYSQL_DATABASE_CLEAN=$(printf '%s' "$MYSQL_DATABASE_CLEAN" | tr -d ' \t\n\r')
+          MYSQL_ROOT_PASSWORD_CLEAN=$(printf '%s' "$MYSQL_ROOT_PASSWORD_CLEAN" | tr -d ' \t\n\r')
+          BACKEND_INSTANCE_ID_CLEAN=$(printf '%s' "$BACKEND_INSTANCE_ID_CLEAN" | tr -d ' \t\n\r')
           cat > /tmp/deploy-backends.sh <<'SCRIPT'
           #!/bin/bash
           set -eux
@@ -145,11 +162,11 @@ jobs:
               ports:
                 - "8081:8081"
           COMPOSE
-          sed -i 's#__PROYECTOS_BACKEND_IMAGE__#${{ env.PROYECTOS_BACKEND_IMAGE }}#g' docker-compose.yml
-          sed -i 's#__AVANCES_BACKEND_IMAGE__#${{ env.AVANCES_BACKEND_IMAGE }}#g' docker-compose.yml
-          sed -i 's#__DATA_PRIVATE_IP__#${{ secrets.DATA_PRIVATE_IP }}#g' docker-compose.yml
-          sed -i 's#__MYSQL_DATABASE__#${{ secrets.MYSQL_DATABASE }}#g' docker-compose.yml
-          sed -i 's#__MYSQL_ROOT_PASSWORD__#${{ secrets.MYSQL_ROOT_PASSWORD }}#g' docker-compose.yml
+          sed -i "s#__PROYECTOS_BACKEND_IMAGE__#${{ env.PROYECTOS_BACKEND_IMAGE }}#g" docker-compose.yml
+          sed -i "s#__AVANCES_BACKEND_IMAGE__#${{ env.AVANCES_BACKEND_IMAGE }}#g" docker-compose.yml
+          sed -i "s#__DATA_PRIVATE_IP__#${DATA_PRIVATE_IP_CLEAN}#g" docker-compose.yml
+          sed -i "s#__MYSQL_DATABASE__#${MYSQL_DATABASE_CLEAN}#g" docker-compose.yml
+          sed -i "s#__MYSQL_ROOT_PASSWORD__#${MYSQL_ROOT_PASSWORD_CLEAN}#g" docker-compose.yml
           docker compose pull
           docker compose up -d
           docker image prune -f
@@ -157,20 +174,26 @@ jobs:
           SCRIPT
           COMMANDS=$(jq -Rs 'split("\n") | map(select(length > 0))' /tmp/deploy-backends.sh)
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.BACKEND_INSTANCE_ID }}" \
+            --instance-ids "${BACKEND_INSTANCE_ID_CLEAN}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Backends EP2" \
             --parameters commands="$COMMANDS" \
             --query "Command.CommandId" --output text)
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.BACKEND_INSTANCE_ID }}"
-          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${{ secrets.BACKEND_INSTANCE_ID }}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${BACKEND_INSTANCE_ID_CLEAN}"
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${BACKEND_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
 
       - name: Deploy Frontend publico
+        env:
+          BACKEND_PRIVATE_IP_CLEAN: ${{ secrets.BACKEND_PRIVATE_IP }}
+          FRONTEND_INSTANCE_ID_CLEAN: ${{ secrets.FRONTEND_INSTANCE_ID }}
         run: |
-          cat > /tmp/deploy-frontend.sh <<'SCRIPT'
+          BACKEND_PRIVATE_IP_CLEAN=$(printf '%s' "$BACKEND_PRIVATE_IP_CLEAN" | tr -d ' \t\n\r')
+          FRONTEND_INSTANCE_ID_CLEAN=$(printf '%s' "$FRONTEND_INSTANCE_ID_CLEAN" | tr -d ' \t\n\r')
+          ECR_REGISTRY=$(printf '%s' "${{ env.FRONTEND_IMAGE }}" | cut -d/ -f1)
+          cat > /tmp/deploy-frontend.sh <<SCRIPT
           #!/bin/bash
           set -eux
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
           mkdir -p /opt/innovatech-frontend
           cd /opt/innovatech-frontend
           cat > docker-compose.yml <<'COMPOSE'
@@ -185,8 +208,8 @@ jobs:
               ports:
                 - "80:8080"
           COMPOSE
-          sed -i 's#__FRONTEND_IMAGE__#${{ env.FRONTEND_IMAGE }}#g' docker-compose.yml
-          sed -i 's#__BACKEND_PRIVATE_IP__#${{ secrets.BACKEND_PRIVATE_IP }}#g' docker-compose.yml
+          sed -i "s#__FRONTEND_IMAGE__#${{ env.FRONTEND_IMAGE }}#g" docker-compose.yml
+          sed -i "s#__BACKEND_PRIVATE_IP__#${BACKEND_PRIVATE_IP_CLEAN}#g" docker-compose.yml
           docker compose pull
           docker compose up -d
           docker image prune -f
@@ -194,10 +217,10 @@ jobs:
           SCRIPT
           COMMANDS=$(jq -Rs 'split("\n") | map(select(length > 0))' /tmp/deploy-frontend.sh)
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ secrets.FRONTEND_INSTANCE_ID }}" \
+            --instance-ids "${FRONTEND_INSTANCE_ID_CLEAN}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Frontend EP2" \
             --parameters commands="$COMMANDS" \
             --query "Command.CommandId" --output text)
-          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.FRONTEND_INSTANCE_ID }}"
-          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${{ secrets.FRONTEND_INSTANCE_ID }}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${FRONTEND_INSTANCE_ID_CLEAN}"
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${FRONTEND_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
