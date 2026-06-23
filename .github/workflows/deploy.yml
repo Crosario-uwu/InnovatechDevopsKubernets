@@ -1,4 +1,4 @@
-name: EP2 - Build, Push ECR and Deploy 3 Layers
+name: EP2+EP3 - Build, Push ECR y Deploy (EC2 + EKS)
 
 on:
   push:
@@ -6,12 +6,13 @@ on:
       - deploy
 
 concurrency:
-  group: ep2-deploy-3layers
+  group: innovatech-deploy
   cancel-in-progress: true
 
 env:
   IMAGE_TAG: latest
   PROJECT_NAME: innovatech-ep2
+  CLUSTER_NAME: innovatech-cluster
 
 jobs:
   build-push-deploy:
@@ -63,7 +64,11 @@ jobs:
           push: true
           tags: ${{ env.FRONTEND_IMAGE }}
 
-      - name: Esperar activacion real de AWS SSM
+      # ===================================================
+      # EP2 - Deploy en las 3 capas EC2 (via SSM)
+      # ===================================================
+
+      - name: "[EC2] Esperar activacion real de AWS SSM"
         env:
           DATA_ID: ${{ secrets.DATA_INSTANCE_ID }}
         run: |
@@ -81,7 +86,7 @@ jobs:
           echo "Error: El agente SSM no logro activarse a tiempo en la instancia pública."
           exit 1
 
-      - name: Deploy Data privado con Docker volume
+      - name: "[EC2] Deploy Data privado con Docker volume"
         env:
           MYSQL_ROOT_PASSWORD_CLEAN: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
@@ -134,7 +139,7 @@ jobs:
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${DATA_INSTANCE_ID_CLEAN}"
           aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${DATA_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
 
-      - name: Deploy Backends privados
+      - name: "[EC2] Deploy Backends privados"
         env:
           DATA_PRIVATE_IP_CLEAN: ${{ secrets.DATA_PRIVATE_IP }}
           MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
@@ -196,7 +201,7 @@ jobs:
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${BACKEND_INSTANCE_ID_CLEAN}"
           aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${BACKEND_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
 
-      - name: Deploy Frontend publico
+      - name: "[EC2] Deploy Frontend publico"
         env:
           BACKEND_PRIVATE_IP_CLEAN: ${{ secrets.BACKEND_PRIVATE_IP }}
           FRONTEND_INSTANCE_ID_CLEAN: ${{ secrets.FRONTEND_INSTANCE_ID }}
@@ -238,3 +243,82 @@ jobs:
             --query "Command.CommandId" --output text)
           aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${FRONTEND_INSTANCE_ID_CLEAN}"
           aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "${FRONTEND_INSTANCE_ID_CLEAN}" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output text
+
+      # ===================================================
+      # EP3 - Deploy en el cluster EKS
+      # ===================================================
+
+      - name: "[EKS] Instalar kubectl"
+        uses: azure/setup-kubectl@v4
+
+      - name: "[EKS] Conectar al cluster"
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: "[EKS] Crear/actualizar Secret de MySQL"
+        env:
+          MYSQL_ROOT_PASSWORD_CLEAN: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE_CLEAN: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          MYSQL_ROOT_PASSWORD_CLEAN=$(printf '%s' "$MYSQL_ROOT_PASSWORD_CLEAN" | tr -d ' \t\n\r')
+          MYSQL_DATABASE_CLEAN=$(printf '%s' "$MYSQL_DATABASE_CLEAN" | tr -d ' \t\n\r')
+          kubectl create secret generic mysql-credentials \
+            --from-literal=root-password="${MYSQL_ROOT_PASSWORD_CLEAN}" \
+            --from-literal=database="${MYSQL_DATABASE_CLEAN}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: "[EKS] Crear/actualizar ConfigMap de inicializacion MySQL"
+        run: |
+          kubectl create configmap mysql-init-config \
+            --from-file=./mysql-init/init.sql \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: "[EKS] Sustituir imagenes en los manifiestos"
+        run: |
+          sed -i "s#__PROYECTOS_BACKEND_IMAGE__#${{ env.PROYECTOS_BACKEND_IMAGE }}#g" infra/k8s/backend-proyectos.yml
+          sed -i "s#__AVANCES_BACKEND_IMAGE__#${{ env.AVANCES_BACKEND_IMAGE }}#g" infra/k8s/backend-avances.yml
+          sed -i "s#__FRONTEND_IMAGE__#${{ env.FRONTEND_IMAGE }}#g" infra/k8s/frontend.yml
+
+      - name: "[EKS] Aplicar manifiestos de Kubernetes"
+        run: |
+          kubectl apply -f infra/k8s/mysql.yml
+          kubectl apply -f infra/k8s/backend-proyectos.yml
+          kubectl apply -f infra/k8s/backend-avances.yml
+          kubectl apply -f infra/k8s/frontend.yml
+          kubectl apply -f infra/k8s/hpa.yml
+
+      - name: "[EKS] Forzar nuevo despliegue (la tag :latest no cambia)"
+        run: |
+          kubectl rollout restart deployment/proyectos-backend
+          kubectl rollout restart deployment/avances-backend
+          kubectl rollout restart deployment/frontend
+
+      - name: "[EKS] Esperar despliegue Proyectos Backend"
+        run: kubectl rollout status deployment/proyectos-backend --timeout=5m
+
+      - name: "[EKS] Esperar despliegue Avances Backend"
+        run: kubectl rollout status deployment/avances-backend --timeout=5m
+
+      - name: "[EKS] Esperar despliegue Frontend"
+        run: kubectl rollout status deployment/frontend --timeout=5m
+
+      - name: "[EKS] Resumen del despliegue"
+        run: |
+          echo "=========================================="
+          echo "DESPLIEGUE EKS COMPLETADO"
+          echo "=========================================="
+          echo ""
+          echo "Pods activos:"
+          kubectl get pods
+          echo ""
+          echo "Servicios:"
+          kubectl get svc
+          echo ""
+          echo "Autoscaling (HPA):"
+          kubectl get hpa
+          echo ""
+          echo "URL publica del Frontend (EKS):"
+          kubectl get service frontend \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+            || echo "Esperando asignacion del LoadBalancer..."
+          echo ""

@@ -76,3 +76,15 @@ output "ssm_commands" {
   aws ssm start-session --target ${aws_instance.data.id}
   EOT
 }
+
+output "eks_cluster_name" {
+  value = aws_eks_cluster.main.name
+}
+
+output "eks_cluster_endpoint" {
+  value = aws_eks_cluster.main.endpoint
+}
+
+output "eks_kubeconfig_command" {
+  value = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.main.name}"
+}

@@ -1,0 +1,51 @@
+# =============================================
+# Frontend React/Nginx (puerto interno 8080)
+# La imagen real la sustituye el pipeline (sed) antes de aplicar.
+# =============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: __FRONTEND_IMAGE__
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          # Nginx usa variables de entorno para resolver las URLs de los backends
+          # igual que en docker-compose (default.conf.template)
+          env:
+            - name: BACKEND_PROYECTOS_URL
+              value: "http://proyectos-backend:8080"
+            - name: BACKEND_AVANCES_URL
+              value: "http://avances-backend:8081"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+---
+# Servicio LoadBalancer: expone el frontend al exterior (genera URL publica en EKS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 8080

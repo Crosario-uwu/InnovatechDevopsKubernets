@@ -1,0 +1,63 @@
+# =============================================
+# MySQL 8.0 - Base de datos Innovatech
+# Las credenciales vienen del Secret "mysql-credentials"
+# que crea el pipeline a partir de los GitHub Secrets.
+# =============================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: root-password
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: database
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          volumeMounts:
+            # Script SQL de inicializacion (tablas y datos de prueba)
+            - name: mysql-init-volume
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-init-volume
+          configMap:
+            name: mysql-init-config
+---
+# Servicio ClusterIP: MySQL solo accesible dentro del cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306

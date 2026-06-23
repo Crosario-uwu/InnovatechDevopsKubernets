@@ -51,3 +51,61 @@ variable "admin_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+# ------------------------------------------------------------
+# EKS (EP3)
+# ------------------------------------------------------------
+
+variable "lab_role_name" {
+  description = "Nombre del IAM Role existente de AWS Academy (LabRole) usado como rol del cluster EKS y de los nodos. AWS Academy no permite crear IAM roles nuevos, por eso se reutiliza este."
+  type        = string
+  default     = "LabRole"
+}
+
+variable "cluster_name" {
+  description = "Nombre del cluster EKS"
+  type        = string
+  default     = "innovatech-cluster"
+}
+
+variable "eks_version" {
+  description = "Version de Kubernetes para el cluster EKS"
+  type        = string
+  default     = "1.30"
+}
+
+variable "public_subnet_b_cidr" {
+  description = "CIDR de la segunda subred publica (AZ2), requerida por EKS"
+  type        = string
+  default     = "10.0.3.0/24"
+}
+
+variable "private_subnet_b_cidr" {
+  description = "CIDR de la segunda subred privada (AZ2), requerida por EKS"
+  type        = string
+  default     = "10.0.4.0/24"
+}
+
+variable "eks_node_instance_types" {
+  description = "Tipos de instancia para el node group de EKS"
+  type        = list(string)
+  default     = ["t3.medium"]
+}
+
+variable "eks_node_desired_size" {
+  description = "Cantidad deseada de nodos worker en el cluster EKS"
+  type        = number
+  default     = 2
+}
+
+variable "eks_node_min_size" {
+  description = "Cantidad minima de nodos worker en el cluster EKS"
+  type        = number
+  default     = 1
+}
+
+variable "eks_node_max_size" {
+  description = "Cantidad maxima de nodos worker en el cluster EKS"
+  type        = number
+  default     = 3
+}
