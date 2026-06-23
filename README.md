@@ -1,30 +1,32 @@
-# Proyecto Innovatech EP2 – Infraestructura AWS con Terraform
+# Proyecto Innovatech – Infraestructura AWS con Terraform (EC2 + EKS)
 
 ## Descripción
 
-Infraestructura gestionada con **Terraform** para desplegar una arquitectura de **3 capas en AWS**:
+Infraestructura gestionada con **Terraform** que despliega la misma aplicación (frontend + 2 backends + MySQL) de **dos formas**, ambas desde un solo pipeline de GitHub Actions:
 
-* **Frontend público** en EC2.
-* **Backend privado** en EC2.
-* **Base de datos MySQL** en EC2 privada.
-* **VPC** con subred pública y subred privada.
-* **Internet Gateway** para acceso al frontend.
-* **NAT Gateway** para salida a Internet desde la subred privada.
+* **EP2 – 3 capas en EC2**: Frontend público, Backend privado y Data privada, cada uno en su propia instancia EC2.
+* **EP3 – Kubernetes (EKS)**: mismo set de servicios desplegado como Deployments/Services en un cluster EKS, con autoescalado (HPA).
+
+Recursos comunes a ambos:
+
+* **VPC** con subred pública y subred privada (mas dos subredes adicionales en una segunda AZ, requeridas por EKS).
+* **Internet Gateway** y **NAT Gateway**.
 * **Security Groups** separados por capa.
 * **Amazon ECR** para imágenes Docker.
-* **GitHub Actions** para CI/CD.
-* **AWS Systems Manager (SSM)** para despliegue remoto.
+* **GitHub Actions** para CI/CD (un solo workflow despliega a EC2 y a EKS).
+* **AWS Systems Manager (SSM)** para el despliegue remoto en EC2.
 * **CloudWatch Logs** para organización de logs por capa.
+* **Cluster EKS + node group**, reutilizando el `LabRole` de AWS Academy.
 
 ---
 
 ## Estructura del proyecto
 
 ```text
-Proyecto-Innovatech-EP2/
+InnovatechDevopsKubernets/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml
+│       └── deploy.yml          # build+push y deploy a EC2 y a EKS
 ├── backend-avances/
 │   ├── Dockerfile
 │   └── src/
@@ -39,11 +41,20 @@ Proyecto-Innovatech-EP2/
 │   ├── backend-compose.yml
 │   └── data-compose.yml
 ├── infra/
-│   └── ep2_tres_capas/
-│       ├── main.tf
-│       ├── variables.tf
-│       ├── outputs.tf
-│       └── terraform.tfvars.example
+│   ├── ep2_tres_capas/
+│   │   ├── main.tf             # VPC, EC2, ECR, Security Groups
+│   │   ├── eks.tf              # cluster EKS + node group
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── terraform.tfvars.example
+│   └── k8s/
+│       ├── mysql.yml
+│       ├── backend-proyectos.yml
+│       ├── backend-avances.yml
+│       ├── frontend.yml
+│       └── hpa.yml
+├── mysql-init/
+│   └── init.sql                # seed data, montado como ConfigMap en EKS
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -168,42 +179,45 @@ El pipeline está ubicado en:
 .github/workflows/deploy.yml
 ```
 
-Flujo de despliegue:
+Flujo de despliegue (un solo workflow, un solo job):
 
 ```text
 Push a rama deploy
         ↓
-GitHub Actions
+Build de imágenes Docker → Push a Amazon ECR
         ↓
-Build de imágenes Docker
+Deploy a EC2 vía AWS Systems Manager
+   (Data → Backends → Frontend)
         ↓
-Push a Amazon ECR
-        ↓
-Deploy vía AWS Systems Manager
-        ↓
-EC2 Frontend, Backend y Data
+Deploy a EKS vía kubectl
+   (Secret/ConfigMap de MySQL → apply manifiestos → rollout restart)
 ```
 
-El despliegue se realiza mediante **SSM**, evitando conectarse manualmente por SSH a cada instancia.
+El despliegue a EC2 se realiza mediante **SSM**, evitando conectarse manualmente por SSH a cada instancia. El despliegue a EKS requiere que el cluster ya exista (ver sección Terraform más abajo).
 
 ---
 
 ## Uso local con Docker
 
-Levantar el proyecto completo:
+Crea tu archivo de entorno (los valores de ejemplo ya funcionan en local):
+
+```bash
+cp .env.example .env
+```
+
+Levanta el proyecto completo:
 
 ```bash
 docker compose up --build
 ```
 
-Servicios locales:
+Servicio accesible desde el host:
 
 ```text
 Frontend: http://localhost:3000
-Backend Proyectos: http://localhost:8080
-Backend Avances: http://localhost:8081
-MySQL: localhost:3306
 ```
+
+Los backends (`proyectos-backend:8080`, `avances-backend:8081`) y MySQL (`3306`) **no se publican al host** — solo son alcanzables dentro de la red interna de Docker (`innovatech-net`); el frontend les llega vía Nginx como reverse proxy.
 
 Detener los servicios:
 
@@ -215,10 +229,21 @@ docker compose down
 
 ## Uso con Terraform
 
+Crea esta infraestructura (VPC, EC2, ECR, **y el cluster EKS + node group**) una sola vez, antes del primer push a la rama `deploy`:
+
 Entrar a la carpeta de infraestructura:
 
 ```bash
 cd infra/ep2_tres_capas
+```
+
+Exportar las credenciales de AWS Academy (Learner Lab → AWS Details):
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_SESSION_TOKEN=...
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
 Inicializar Terraform:
@@ -239,13 +264,13 @@ Revisar plan:
 terraform plan
 ```
 
-Crear infraestructura:
+Crear infraestructura (la creación del cluster EKS demora ~10-15 min):
 
 ```bash
 terraform apply
 ```
 
-Ver outputs:
+Ver outputs (incluye `eks_cluster_name`, `eks_cluster_endpoint` y la lista de secrets a configurar en GitHub):
 
 ```bash
 terraform output
@@ -256,6 +281,34 @@ Eliminar infraestructura:
 ```bash
 terraform destroy
 ```
+
+---
+
+## Uso con Kubernetes (EKS)
+
+Una vez creado el cluster con Terraform, el pipeline se conecta y aplica los manifiestos de `infra/k8s/` automáticamente en cada push. Para operarlo a mano:
+
+Conectarte al cluster:
+
+```bash
+aws eks update-kubeconfig --region us-east-1 --name innovatech-cluster
+```
+
+Instalar `metrics-server` (una sola vez, requerido para que el HPA escale):
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+Ver el estado del despliegue:
+
+```bash
+kubectl get pods
+kubectl get svc frontend   # URL pública (LoadBalancer)
+kubectl get hpa
+```
+
+Las credenciales de MySQL se inyectan vía un `Secret` (`mysql-credentials`) que el pipeline crea a partir de los GitHub Secrets `MYSQL_ROOT_PASSWORD`/`MYSQL_DATABASE` — no están hardcodeadas en los manifiestos.
 
 ---
 
@@ -279,6 +332,7 @@ Flujo DevOps:
 
 ```text
 GitHub Actions → Amazon ECR → AWS SSM → EC2
+                            └→ kubectl → EKS
 ```
 
 Para agregar el diagrama al README:
@@ -292,14 +346,15 @@ Para agregar el diagrama al README:
 ## Buenas prácticas incluidas
 
 * Separación en 3 capas: Frontend, Backend y Data.
-* Frontend en subred pública.
-* Backend y Data en subred privada.
+* Frontend en subred pública; Backend y Data en subred privada.
 * Security Groups separados por capa.
 * Base de datos accesible solo desde Backend.
 * NAT Gateway para salida a Internet desde recursos privados.
-* Imágenes Docker almacenadas en ECR.
-* Despliegue automatizado con GitHub Actions.
-* Uso de SSM para ejecutar comandos remotos en EC2.
+* Imágenes Docker almacenadas en ECR, reutilizadas tanto por EC2 como por EKS.
+* Despliegue automatizado con GitHub Actions a ambos destinos.
+* Uso de SSM para ejecutar comandos remotos en EC2 (sin SSH manual).
+* Credenciales de MySQL inyectadas vía Kubernetes Secret, no hardcodeadas en los manifiestos.
+* Autoescalado horizontal (HPA) para los backends en EKS.
 * Variables y outputs organizados en Terraform.
 
 ---
@@ -307,17 +362,17 @@ Para agregar el diagrama al README:
 ## Mejoras futuras
 
 * Separar Backend y Data en subredes privadas distintas.
-* Agregar Application Load Balancer.
-* Migrar de EC2 a ECS Fargate.
-* Usar Amazon RDS en lugar de MySQL en EC2.
+* Agregar Application Load Balancer para la ruta EC2 (en EKS ya existe vía el Service `LoadBalancer`).
+* Usar Amazon RDS en lugar de MySQL en EC2 o en un pod de Kubernetes.
 * Configurar envío real de logs de contenedores a CloudWatch.
 * Agregar HTTPS con AWS Certificate Manager.
 * Usar un backend remoto para el estado de Terraform.
+* Separar el job EC2 y el job EKS del pipeline para que sean independientes entre si.
 
 ---
 
 ## Resumen
 
-Este proyecto implementa una arquitectura AWS de 3 capas usando **Terraform, Docker, EC2, ECR, GitHub Actions, SSM, NAT Gateway, Security Groups y CloudWatch Logs**.
+Este proyecto implementa una arquitectura AWS que despliega la misma aplicación de dos formas: **3 capas en EC2** y **Kubernetes (EKS)**, usando **Terraform, Docker, EC2, EKS, ECR, GitHub Actions, SSM, NAT Gateway, Security Groups y CloudWatch Logs**.
 
-La solución permite desplegar una aplicación web completa, manteniendo el backend y la base de datos protegidos en una subred privada y automatizando el despliegue mediante CI/CD.
+La solución permite desplegar una aplicación web completa, manteniendo el backend y la base de datos protegidos en una subred privada y automatizando el despliegue mediante un solo pipeline de CI/CD.
