@@ -398,7 +398,7 @@ locals {
 resource "aws_instance" "frontend" {
   ami                         = data.aws_ami.amazon_linux.id
   instance_type               = var.instance_type
-  key_name                    = "ep2-devops-key"
+  key_name                    = var.key_pair_name
   subnet_id                   = aws_subnet.public_frontend.id
   vpc_security_group_ids      = [aws_security_group.frontend.id]
   iam_instance_profile        = data.aws_iam_instance_profile.lab_profile.name
@@ -425,7 +425,7 @@ resource "aws_instance" "frontend" {
 resource "aws_instance" "backend" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
-  key_name               = "ep2-devops-key"
+  key_name               = var.key_pair_name
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.backend.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
@@ -451,7 +451,7 @@ resource "aws_instance" "backend" {
 resource "aws_instance" "data" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = var.instance_type
-  key_name               = "ep2-devops-key"
+  key_name               = var.key_pair_name
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.data.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name

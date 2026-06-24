@@ -11,9 +11,9 @@ variable "project_name" {
 }
 
 variable "key_pair_name" {
-  description = "Nombre del Key Pair creado en AWS. Debe existir antes del terraform apply."
+  description = "Nombre del Key Pair creado en AWS. Debe existir antes del terraform apply. AWS Academy crea uno por defecto llamado 'vockey'."
   type        = string
-  default     = "ep2-devops-key"
+  default     = "vockey"
 }
 
 variable "iam_instance_profile_name" {

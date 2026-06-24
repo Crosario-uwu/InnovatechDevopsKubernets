@@ -37,6 +37,8 @@ crash.log
 crash.*.log
 *.tfvars
 *.tfvars.json
+*.tfplan
+tfplan.out
 
 # Docker local
 mysql_data/
