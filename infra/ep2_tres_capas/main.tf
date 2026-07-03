@@ -406,7 +406,7 @@ resource "aws_instance" "frontend" {
   user_data                   = local.common_user_data
 
   root_block_device {
-    volume_size = 12
+    volume_size = 30
     volume_type = "gp3"
   }
 
@@ -432,7 +432,7 @@ resource "aws_instance" "backend" {
   user_data              = local.common_user_data
 
   root_block_device {
-    volume_size = 12
+    volume_size = 30
     volume_type = "gp3"
   }
 
@@ -458,7 +458,7 @@ resource "aws_instance" "data" {
   user_data              = local.common_user_data
 
   root_block_device {
-    volume_size = 12
+    volume_size = 30
     volume_type = "gp3"
   }
 
