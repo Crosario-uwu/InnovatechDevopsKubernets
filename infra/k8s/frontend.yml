@@ -8,6 +8,13 @@ metadata:
   name: frontend
 spec:
   replicas: 1
+  # maxSurge: 0 evita necesitar un pod extra temporal durante el rollout --
+  # el cluster (2x t3.medium) no tiene CPU libre para un 2do pod momentaneo.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: frontend

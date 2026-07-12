@@ -8,6 +8,13 @@ metadata:
   name: avances-backend
 spec:
   replicas: 2
+  # maxSurge: 0 evita necesitar un pod extra temporal durante el rollout --
+  # el cluster (2x t3.medium) no tiene CPU libre para un 3er pod momentaneo.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: avances-backend
