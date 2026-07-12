@@ -290,7 +290,12 @@ jobs:
       - name: "[EKS] Instalar/actualizar Fluent Bit (logs de aplicacion a CloudWatch Container Insights)"
         run: |
           curl -s https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/quickstart/cwagent-fluent-bit-quickstart.yaml \
-            | sed "s/{{cluster_name}}/${{ env.CLUSTER_NAME }}/;s/{{region_name}}/${{ secrets.AWS_REGION }}/" \
+            | sed -e "s/{{cluster_name}}/${{ env.CLUSTER_NAME }}/" \
+                  -e "s/{{region_name}}/${{ secrets.AWS_REGION }}/" \
+                  -e 's/{{http_server_toggle}}/"On"/' \
+                  -e 's/{{http_server_port}}/"2020"/' \
+                  -e 's/{{read_from_head}}/"Off"/' \
+                  -e 's/{{read_from_tail}}/"On"/' \
             | kubectl apply -f -
 
       - name: "[EKS] Crear/actualizar Secret de MySQL"
