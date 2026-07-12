@@ -125,6 +125,10 @@ resource "aws_eks_cluster" "main" {
   role_arn = data.aws_iam_role.lab_role.arn
   version  = var.eks_version
 
+  # Logs del control plane hacia CloudWatch (log group
+  # /aws/eks/<cluster_name>/cluster, creado automaticamente por EKS).
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
   vpc_config {
     subnet_ids = [
       aws_subnet.public_frontend.id,

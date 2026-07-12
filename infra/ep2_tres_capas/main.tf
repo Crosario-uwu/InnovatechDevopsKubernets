@@ -389,6 +389,27 @@ locals {
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     fi
   EOF
+
+  # CloudWatch Agent por tier: envia los logs de Docker de cada
+  # instancia a su Log Group correspondiente, de forma independiente
+  # al arranque de los contenedores (ver templates/cloudwatch-agent.sh.tpl).
+  cloudwatch_agent_frontend = templatefile("${path.module}/templates/cloudwatch-agent.sh.tpl", {
+    region          = var.aws_region
+    log_group_name  = aws_cloudwatch_log_group.frontend.name
+    log_stream_name = "frontend"
+  })
+
+  cloudwatch_agent_backend = templatefile("${path.module}/templates/cloudwatch-agent.sh.tpl", {
+    region          = var.aws_region
+    log_group_name  = aws_cloudwatch_log_group.backend.name
+    log_stream_name = "backend"
+  })
+
+  cloudwatch_agent_data = templatefile("${path.module}/templates/cloudwatch-agent.sh.tpl", {
+    region          = var.aws_region
+    log_group_name  = aws_cloudwatch_log_group.data.name
+    log_stream_name = "data"
+  })
 }
 
 # ------------------------------------------------------------
@@ -403,7 +424,7 @@ resource "aws_instance" "frontend" {
   vpc_security_group_ids      = [aws_security_group.frontend.id]
   iam_instance_profile        = data.aws_iam_instance_profile.lab_profile.name
   associate_public_ip_address = true
-  user_data                   = local.common_user_data
+  user_data                   = "${local.common_user_data}\n${local.cloudwatch_agent_frontend}"
 
   root_block_device {
     volume_size = 30
@@ -429,7 +450,7 @@ resource "aws_instance" "backend" {
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.backend.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
-  user_data              = local.common_user_data
+  user_data              = "${local.common_user_data}\n${local.cloudwatch_agent_backend}"
 
   root_block_device {
     volume_size = 30
@@ -455,7 +476,7 @@ resource "aws_instance" "data" {
   subnet_id              = aws_subnet.private_backend_data.id
   vpc_security_group_ids = [aws_security_group.data.id]
   iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
-  user_data              = local.common_user_data
+  user_data              = "${local.common_user_data}\n${local.cloudwatch_agent_data}"
 
   root_block_device {
     volume_size = 30

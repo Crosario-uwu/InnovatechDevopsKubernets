@@ -8,7 +8,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -29,6 +28,9 @@ public class Avance {
 
     private boolean completado;
 
-    @NotNull(message = "El id del proyecto es obligatorio")
+    // Se asigna en AvanceService.guardar() a partir del @PathVariable de la
+    // URL, nunca viene en el body del cliente (ver AvanceController) -- por
+    // eso no lleva @NotNull: si lo llevara, @Valid rechazaria con 400 toda
+    // creacion real, ya que el body nunca trae este campo.
     private Long proyectoId;
 }

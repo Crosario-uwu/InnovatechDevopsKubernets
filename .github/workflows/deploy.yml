@@ -15,7 +15,34 @@ env:
   CLUSTER_NAME: innovatech-cluster
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Test Proyectos Backend
+        working-directory: ./backend-proyectos
+        run: |
+          chmod +x mvnw
+          ./mvnw -B test
+
+      - name: Test Avances Backend
+        working-directory: ./backend-avances
+        run: |
+          chmod +x mvnw
+          ./mvnw -B test
+
   build-push-deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -254,6 +281,17 @@ jobs:
       - name: "[EKS] Conectar al cluster"
         run: |
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: "[EKS] Instalar/actualizar metrics-server (requerido por el HPA)"
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl wait --for=condition=available --timeout=120s deployment/metrics-server -n kube-system
+
+      - name: "[EKS] Instalar/actualizar Fluent Bit (logs de aplicacion a CloudWatch Container Insights)"
+        run: |
+          curl -s https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/quickstart/cwagent-fluent-bit-quickstart.yaml \
+            | sed "s/{{cluster_name}}/${{ env.CLUSTER_NAME }}/;s/{{region_name}}/${{ secrets.AWS_REGION }}/" \
+            | kubectl apply -f -
 
       - name: "[EKS] Crear/actualizar Secret de MySQL"
         env:
