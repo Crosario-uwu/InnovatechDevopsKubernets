@@ -391,3 +391,8 @@ Las credenciales de MySQL se inyectan vía un `Secret` (`mysql-credentials`) que
 **Innovatech** es una app de gestión de proyectos y avances (React + 2 APIs Spring Boot + MySQL), desplegada mediante una arquitectura AWS que la publica de **dos formas en paralelo**: **3 capas en EC2** y **Kubernetes (EKS)**, usando **Terraform, Docker, EC2, EKS, ECR, GitHub Actions, SSM, NAT Gateway, Security Groups, HPA y CloudWatch Container Insights**.
 
 La solución mantiene el backend y la base de datos protegidos en una subred privada (EC2) o expuestos solo dentro del cluster (EKS), automatiza todo el ciclo de build-test-deploy con un solo pipeline de CI/CD, y en EKS agrega autoescalado horizontal y rolling updates ajustados a la capacidad real del cluster.
+
+## Diagrama
+
+<img width="958" height="1121" alt="image" src="https://github.com/user-attachments/assets/505542ea-aeda-4c43-a9e1-b960566d7bbe" />
+
