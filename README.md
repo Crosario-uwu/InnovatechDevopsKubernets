@@ -1,21 +1,33 @@
-# Proyecto Innovatech – Infraestructura AWS con Terraform (EC2 + EKS)
+# Proyecto Innovatech – Gestión de Proyectos y Avances con Infraestructura AWS (EC2 + EKS)
 
 ## Descripción
 
-Infraestructura gestionada con **Terraform** que despliega la misma aplicación (frontend + 2 backends + MySQL) de **dos formas**, ambas desde un solo pipeline de GitHub Actions:
+**Innovatech** es una aplicación web para la **gestión de proyectos y su seguimiento (avances)**. Permite:
+
+* Crear, listar y eliminar **proyectos** (nombre, responsable, estado — por defecto `Planificado`).
+* Registrar **avances** asociados a un proyecto (fecha, descripción, estado de completado), y listarlos globalmente o filtrados por proyecto.
+* Consultar todo desde una interfaz **React** que consume dos APIs REST independientes (`/api/v1/proyectos` y `/api/v1/avances`).
+
+Funcionalmente son 3 piezas:
+
+* **Frontend** (React + Vite, servido por Nginx): UI para crear/ver proyectos y sus avances.
+* **Backend Proyectos** (Spring Boot, puerto `8080`): CRUD de proyectos, persistido en MySQL.
+* **Backend Avances** (Spring Boot, puerto `8081`): CRUD de avances, ligados a un proyecto por `proyectoId`, persistido en la misma base MySQL.
+
+A nivel de infraestructura, el proyecto está gestionado con **Terraform** y se despliega de **dos formas en paralelo**, ambas desde un solo pipeline de GitHub Actions en cada push a la rama `deploy`:
 
 * **EP2 – 3 capas en EC2**: Frontend público, Backend privado y Data privada, cada uno en su propia instancia EC2.
-* **EP3 – Kubernetes (EKS)**: mismo set de servicios desplegado como Deployments/Services en un cluster EKS, con autoescalado (HPA).
+* **EP3 – Kubernetes (EKS)**: mismo set de servicios desplegado como Deployments/Services en un cluster EKS, con autoescalado horizontal (HPA), rolling updates controlados y logs enviados a CloudWatch Container Insights.
 
-Recursos comunes a ambos:
+Recursos comunes a ambos destinos:
 
-* **VPC** con subred pública y subred privada (mas dos subredes adicionales en una segunda AZ, requeridas por EKS).
+* **VPC** con subred pública y subred privada (más dos subredes adicionales en una segunda AZ, requeridas por EKS).
 * **Internet Gateway** y **NAT Gateway**.
 * **Security Groups** separados por capa.
-* **Amazon ECR** para imágenes Docker.
-* **GitHub Actions** para CI/CD (un solo workflow despliega a EC2 y a EKS).
-* **AWS Systems Manager (SSM)** para el despliegue remoto en EC2.
-* **CloudWatch Logs** para organización de logs por capa.
+* **Amazon ECR** para imágenes Docker, compartido por EC2 y EKS.
+* **GitHub Actions** para CI/CD: test → build → push a ECR → deploy a EC2 (SSM) → deploy a EKS (kubectl), todo en un solo workflow.
+* **AWS Systems Manager (SSM)** para el despliegue remoto en EC2, sin SSH manual.
+* **CloudWatch Logs / Container Insights** (vía Fluent Bit en EKS) para centralizar logs.
 * **Cluster EKS + node group**, reutilizando el `LabRole` de AWS Academy.
 
 ---
@@ -59,6 +71,31 @@ InnovatechDevopsKubernets/
 ├── .env.example
 └── README.md
 ```
+
+---
+
+## API — qué hace cada backend
+
+### Backend Proyectos (`:8080`)
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/proyectos` | Lista todos los proyectos |
+| `POST` | `/api/v1/proyectos` | Crea un proyecto (`nombre`, `responsable`, `estado`) |
+| `DELETE` | `/api/v1/proyectos/{id}` | Elimina un proyecto |
+| `GET` | `/api/v1/ping` | Health check (usado por readiness/liveness probes) |
+
+### Backend Avances (`:8081`)
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/avances` | Lista todos los avances |
+| `GET` | `/api/v1/proyectos/{proyectoId}/avances` | Lista avances de un proyecto |
+| `POST` | `/api/v1/proyectos/{proyectoId}/avances` | Crea un avance (`fecha`, `descripcion`, `completado`) para ese proyecto |
+| `DELETE` | `/api/v1/avances/{id}` | Elimina un avance |
+| `GET` | `/api/v1/ping/avances` | Health check (usado por readiness/liveness probes) |
+
+El **frontend** (`src/api/api.js`) consume ambas APIs vía Nginx como reverse proxy (`BACKEND_PROYECTOS_URL` / `BACKEND_AVANCES_URL`), por lo que nunca expone las URLs internas de los backends al navegador.
 
 ---
 
@@ -179,21 +216,26 @@ El pipeline está ubicado en:
 .github/workflows/deploy.yml
 ```
 
-Flujo de despliegue (un solo workflow, un solo job):
+Flujo de despliegue (un solo workflow, dos jobs):
 
 ```text
 Push a rama deploy
         ↓
+Job "test": mvnw test en ambos backends (gate de calidad)
+        ↓
+Job "build-push-deploy":
 Build de imágenes Docker → Push a Amazon ECR
         ↓
 Deploy a EC2 vía AWS Systems Manager
    (Data → Backends → Frontend)
         ↓
 Deploy a EKS vía kubectl
-   (Secret/ConfigMap de MySQL → apply manifiestos → rollout restart)
+   (metrics-server → Fluent Bit/CloudWatch Container Insights
+    → Secret/ConfigMap de MySQL → apply manifiestos
+    → rollout restart con maxSurge:0 → esperar rollout → resumen)
 ```
 
-El despliegue a EC2 se realiza mediante **SSM**, evitando conectarse manualmente por SSH a cada instancia. El despliegue a EKS requiere que el cluster ya exista (ver sección Terraform más abajo).
+El despliegue a EC2 se realiza mediante **SSM**, evitando conectarse manualmente por SSH a cada instancia. El despliegue a EKS requiere que el cluster ya exista (ver sección Terraform más abajo). Al final del job, el pipeline imprime en el log la **URL pública del frontend** (hostname del LoadBalancer de EKS).
 
 ---
 
@@ -312,37 +354,6 @@ Las credenciales de MySQL se inyectan vía un `Secret` (`mysql-credentials`) que
 
 ---
 
-## Diagrama de arquitectura
-
-El flujo general de la arquitectura es:
-
-```text
-Usuario / Navegador
-        ↓
-Internet Gateway
-        ↓
-EC2 Frontend pública
-        ↓
-EC2 Backend privada
-        ↓
-EC2 Data privada con MySQL
-```
-
-Flujo DevOps:
-
-```text
-GitHub Actions → Amazon ECR → AWS SSM → EC2
-                            └→ kubectl → EKS
-```
-
-Para agregar el diagrama al README:
-
-```markdown
-![Diagrama de arquitectura](docs/arquitectura-aws-3-capas.png)
-```
-
----
-
 ## Buenas prácticas incluidas
 
 * Separación en 3 capas: Frontend, Backend y Data.
@@ -351,10 +362,14 @@ Para agregar el diagrama al README:
 * Base de datos accesible solo desde Backend.
 * NAT Gateway para salida a Internet desde recursos privados.
 * Imágenes Docker almacenadas en ECR, reutilizadas tanto por EC2 como por EKS.
-* Despliegue automatizado con GitHub Actions a ambos destinos.
+* Despliegue automatizado con GitHub Actions a ambos destinos, con job `test` como gate previo al build.
 * Uso de SSM para ejecutar comandos remotos en EC2 (sin SSH manual).
 * Credenciales de MySQL inyectadas vía Kubernetes Secret, no hardcodeadas en los manifiestos.
-* Autoescalado horizontal (HPA) para los backends en EKS.
+* Autoescalado horizontal (HPA, 2-10 réplicas al 50% CPU) para ambos backends en EKS.
+* `readinessProbe`/`livenessProbe` en los backends contra sus endpoints `/api/v1/ping`, para que Kubernetes no enrute tráfico a pods aún no listos.
+* `resources.requests`/`limits` de CPU y memoria definidos en cada Deployment, evitando que un pod acapare el nodo.
+* Rolling updates con `maxSurge: 0` / `maxUnavailable: 1` en frontend y backends: evita necesitar un pod extra temporal durante el despliegue, ya que el cluster (2× t3.medium) no tiene CPU libre para ese pod momentáneo.
+* Logs de aplicación centralizados en CloudWatch Container Insights vía Fluent Bit (DaemonSet).
 * Variables y outputs organizados en Terraform.
 
 ---
@@ -373,6 +388,6 @@ Para agregar el diagrama al README:
 
 ## Resumen
 
-Este proyecto implementa una arquitectura AWS que despliega la misma aplicación de dos formas: **3 capas en EC2** y **Kubernetes (EKS)**, usando **Terraform, Docker, EC2, EKS, ECR, GitHub Actions, SSM, NAT Gateway, Security Groups y CloudWatch Logs**.
+**Innovatech** es una app de gestión de proyectos y avances (React + 2 APIs Spring Boot + MySQL), desplegada mediante una arquitectura AWS que la publica de **dos formas en paralelo**: **3 capas en EC2** y **Kubernetes (EKS)**, usando **Terraform, Docker, EC2, EKS, ECR, GitHub Actions, SSM, NAT Gateway, Security Groups, HPA y CloudWatch Container Insights**.
 
-La solución permite desplegar una aplicación web completa, manteniendo el backend y la base de datos protegidos en una subred privada y automatizando el despliegue mediante un solo pipeline de CI/CD.
+La solución mantiene el backend y la base de datos protegidos en una subred privada (EC2) o expuestos solo dentro del cluster (EKS), automatiza todo el ciclo de build-test-deploy con un solo pipeline de CI/CD, y en EKS agrega autoescalado horizontal y rolling updates ajustados a la capacidad real del cluster.
